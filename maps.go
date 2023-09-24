@@ -50,28 +50,69 @@ func (c *Client) AddMap(fileName string, mapData MapData, ctx context.Context) e
 	return res.Err()
 }
 
-func (c *Client) FindMaps(inFile string, ctx context.Context) ([]StoredMapData, error) {
-	col := c.getCollection(mapsColl)
+type MapList []MapListElement
+type MapListElement struct {
+	MapID     string `bson:"mapID"`
+	LevelName string `bson:"levelName"`
+	Act       string `bson:"act"`
+	SubTitle  string `bson:"subTitle"`
+	ZoneTitle string `bson:"zoneTitle"`
+	NoZone    bool   `bson:"noZone"`
+}
 
-	filter := bson.D{}
+func (c *Client) FindMaps(inFile string, ctx context.Context) (MapList, error) {
+	col := c.getCollection(mapsColl)
+	pipeline := mongo.Pipeline{}
+
+	// filter on filename if given
 	if inFile != "" {
-		filter = append(filter, bson.E{"filename", inFile})
+		pipeline = append(pipeline,
+			bson.D{
+				{"$match",
+					bson.D{{"filename", inFile}},
+				},
+			},
+		)
 	}
 
-	cursor, err := col.Find(ctx,
-		filter,
-		options.Find().SetSort(bson.D{{"mapdata.mapID", 1}}),
+	// group on mapID
+	pipeline = append(pipeline,
+		bson.D{
+			{
+				"$group",
+				bson.M{
+					"_id":       bson.A{"$mapdata.mapID", "$mapdata.levelName", "$mapdata.subTitle"},
+					"mapID":     bson.M{"$first": "$mapdata.mapID"},
+					"levelName": bson.M{"$first": "$mapdata.levelName"},
+					"act":       bson.M{"$first": "$mapdata.act"},
+					"subTitle":  bson.M{"$first": "$mapdata.subTitle"},
+					"zoneTitle": bson.M{"$first": "$mapdata.zoneTitle"},
+					"noZone":    bson.M{"$first": "$mapdata.noZone"},
+				},
+			},
+		},
+	)
+
+	// sort on mapID
+	pipeline = append(pipeline,
+		bson.D{
+			{"$sort", bson.M{"mapID": 1}},
+		},
+	)
+
+	cursor, err := col.Aggregate(ctx,
+		pipeline,
 	)
 
 	if err != nil {
-		return []StoredMapData{}, err
+		return MapList{}, err
 	}
 
-	maps := make([]StoredMapData, 0)
+	maps := make(MapList, 0)
 
 	err = cursor.All(ctx, &maps)
 	if err != nil {
-		return []StoredMapData{}, err
+		return MapList{}, err
 	}
 
 	return maps, nil
