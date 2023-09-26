@@ -12,6 +12,12 @@ const mapsColl = "maps"
 
 type LevelType string
 
+type MapKey struct {
+	MapID     string `bson:"mapID"`
+	LevelName string `bson:"levelName"`
+	SubTitle  string `bson:"subTitle"`
+}
+
 type MapData struct {
 	MapID       string    `bson:"mapID"`
 	LevelName   string    `bson:"levelName"`
@@ -58,22 +64,33 @@ type MapListElement struct {
 	SubTitle  string `bson:"subTitle"`
 	ZoneTitle string `bson:"zoneTitle"`
 	NoZone    bool   `bson:"noZone"`
+	NumLaps   int    `bson:"numLaps"`
+	Filename  string `bson:"filename"`
 }
 
-func (c *Client) FindMaps(inFile string, ctx context.Context) (MapList, error) {
+func (c *Client) FindMaps(inFile string, mapKey *MapKey, ctx context.Context) (MapList, error) {
 	col := c.getCollection(mapsColl)
 	pipeline := mongo.Pipeline{}
 
-	// filter on filename if given
+	// filter on given parameters
+	matchFilters := bson.M{}
 	if inFile != "" {
-		pipeline = append(pipeline,
-			bson.D{
-				{"$match",
-					bson.D{{"filename", inFile}},
-				},
-			},
-		)
+		matchFilters["filename"] = inFile
 	}
+
+	if mapKey != nil {
+		matchFilters["mapdata.mapID"] = mapKey.MapID
+		matchFilters["mapdata.levelName"] = mapKey.LevelName
+		matchFilters["mapdata.subTitle"] = mapKey.SubTitle
+	}
+
+	pipeline = append(pipeline,
+		bson.D{
+			{"$match",
+				matchFilters,
+			},
+		},
+	)
 
 	// group on mapID
 	pipeline = append(pipeline,
@@ -88,6 +105,8 @@ func (c *Client) FindMaps(inFile string, ctx context.Context) (MapList, error) {
 					"subTitle":  bson.M{"$first": "$mapdata.subTitle"},
 					"zoneTitle": bson.M{"$first": "$mapdata.zoneTitle"},
 					"noZone":    bson.M{"$first": "$mapdata.noZone"},
+					"numLaps":   bson.M{"$first": "$mapdata.numLaps"},
+					"filename":  bson.M{"$first": "$filename"},
 				},
 			},
 		},
