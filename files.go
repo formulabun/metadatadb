@@ -92,23 +92,43 @@ func (c *Client) FindFiles(t addons.AddonType, operation string, ctx context.Con
 	cursor, err := col.Find(
 		ctx,
 		bson.D{{andor, filter}},
-		options.Find().SetSort(
-			bson.D{
-				{"_id", 1},
-			},
-		),
+		fileSortOptions,
 	)
 
 	if err != nil {
 		return []File{}, err
 	}
 
-	files := make([]File, 0)
+	return allFiles(cursor, ctx)
+}
 
-	err = cursor.All(ctx, &files)
+func (c *Client) FindFilesByFilename(filename string, ctx context.Context) ([]File, error) {
+	col := c.getCollection(filesColl)
+
+	cursor, err := col.Find(
+		ctx,
+		bson.D{{"filename", filename}},
+		fileSortOptions,
+	)
+
 	if err != nil {
 		return []File{}, err
 	}
 
-	return files, nil
+	return allFiles(cursor, ctx)
+}
+
+// helper stuff
+
+var fileSortOptions = options.Find().SetSort(
+	bson.D{
+		{"_id", 1},
+	},
+)
+
+func allFiles(cursor *mongo.Cursor, ctx context.Context) ([]File, error) {
+	files := make([]File, 0)
+
+	err := cursor.All(ctx, &files)
+	return files, err
 }
